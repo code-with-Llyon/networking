@@ -24,7 +24,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "./*"               # <— no dotfiles (skips .git)
+          source: "./*"
           target: "/home/ubuntu/app_src"
           strip_components: 0
           overwrite: true
@@ -38,7 +38,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -eux
-
             # Ensure Docker (Ubuntu)
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
@@ -57,9 +56,10 @@ jobs:
             # Free port 80 & old containers
             sudo docker rm -f webserver myapp 2>/dev/null || true
 
-            # Build & run
+            # Build & run (auto-restart)
             sudo docker build -t myapp:latest .
-sudo docker run -d --name myapp --restart unless-stopped -p 80:80 myapp:latest
+            sudo docker run -d --name myapp --restart unless-stopped -p 80:80 myapp:latest
+
             # Status + last logs + local health check
             sudo docker ps
             sudo docker logs myapp --tail=80 || true
