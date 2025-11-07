@@ -12,7 +12,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Copy source to /opt/myapp on EC2 (exclude git/CI/big junk)
+      - name: Validate required secrets
+        run: |
+          [ -n "${{ secrets.EC2_HOST }}" ] || (echo "EC2_HOST secret is missing"; exit 1)
+          [ -n "${{ secrets.EC2_SSH_KEY }}" ] || (echo "EC2_SSH_KEY secret is missing"; exit 1)
+
+      # Copy repo to a HOME dir (no sudo needed). DO NOT remove /opt here.
       - name: Copy source to EC2 with SCP
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -20,13 +25,13 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "."
-          target: "/opt/myapp"
+          target: "/home/ubuntu/app_src"
           strip_components: 0
           overwrite: true
           rm: true
-          exclude: ".git,.github,myapp.tar,*.zip,*.rar,*.7z,*.mp4,*.mkv,*.exe,*.iso,__pycache__"
+          # IMPORTANT: no 'exclude' input (unsupported by this action)
 
-      # Build image & run container on EC2 (Ubuntu)
+      # Move code into /opt/myapp with sudo, then build & run Docker
       - name: Build image & run container on EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -36,7 +41,7 @@ jobs:
           script: |
             set -eux
 
-            # --- Ensure Docker (Ubuntu) ---
+            # Ensure Docker (Ubuntu)
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y docker.io
@@ -44,21 +49,21 @@ jobs:
               sudo usermod -aG docker ubuntu || true
             fi
 
-            # --- Prep deploy dir ---
+            # Prep /opt/myapp and sync files from /home/ubuntu/app_src
             sudo mkdir -p /opt/myapp
+            sudo rm -rf /opt/myapp/* || true
+            sudo cp -a /home/ubuntu/app_src/. /opt/myapp/
             sudo chown -R ubuntu:ubuntu /opt/myapp
             cd /opt/myapp
 
-            # --- Free port 80 from any old containers ---
+            # Free port 80 & old containers
             sudo docker rm -f webserver myapp 2>/dev/null || true
 
-            # --- Build & run fresh container on port 80 ---
+            # Build & run
             sudo docker build -t myapp:latest .
             sudo docker run -d --name myapp -p 80:80 myapp:latest
 
-            # --- Show status & last logs for debugging ---
+            # Status + last logs + local health check
             sudo docker ps
             sudo docker logs myapp --tail=80 || true
-
-            # --- Local health check on the instance ---
             (curl -sI http://127.0.0.1/ | head -n 20) || true
