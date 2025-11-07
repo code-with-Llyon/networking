@@ -17,21 +17,19 @@ jobs:
           [ -n "${{ secrets.EC2_HOST }}" ] || (echo "EC2_HOST secret is missing"; exit 1)
           [ -n "${{ secrets.EC2_SSH_KEY }}" ] || (echo "EC2_SSH_KEY secret is missing"; exit 1)
 
-      # Copy repo to a HOME dir (no sudo needed). DO NOT remove /opt here.
+      # IMPORTANT: use "./*" so hidden files/folders (like .git) are NOT included
       - name: Copy source to EC2 with SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
+          source: "./*"               # <— no dotfiles (skips .git)
           target: "/home/ubuntu/app_src"
           strip_components: 0
           overwrite: true
           rm: true
-          # IMPORTANT: no 'exclude' input (unsupported by this action)
 
-      # Move code into /opt/myapp with sudo, then build & run Docker
       - name: Build image & run container on EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -49,7 +47,7 @@ jobs:
               sudo usermod -aG docker ubuntu || true
             fi
 
-            # Prep /opt/myapp and sync files from /home/ubuntu/app_src
+            # Prep /opt/myapp and sync from home
             sudo mkdir -p /opt/myapp
             sudo rm -rf /opt/myapp/* || true
             sudo cp -a /home/ubuntu/app_src/. /opt/myapp/
