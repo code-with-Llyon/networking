@@ -2,8 +2,7 @@ name: Deploy Flask App to AWS EC2
 
 on:
   push:
-    branches:
-      - main  # Run this when you push to the main branch
+    branches: [ "main" ]
 
 jobs:
   deploy:
@@ -11,34 +10,55 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        run: docker build -t myapp:latest .
-
-      - name: Save Docker image as tar
-        run: docker save myapp:latest -o myapp.tar
-
-      - name: Copy Docker image to EC2 instance
+      # Copy source to /opt/myapp on EC2 (exclude git/CI/big junk)
+      - name: Copy source to EC2 with SCP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.EC2_PUBLIC_IP }}
+          host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "myapp.tar"
-          target: "~/"
+          source: "."
+          target: "/opt/myapp"
+          strip_components: 0
+          overwrite: true
+          rm: true
+          exclude: ".git,.github,myapp.tar,*.zip,*.rar,*.7z,*.mp4,*.mkv,*.exe,*.iso,__pycache__"
 
-      - name: Deploy Docker container on EC2
+      # Build image & run container on EC2 (Ubuntu)
+      - name: Build image & run container on EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
-          host: ${{ secrets.EC2_PUBLIC_IP }}
+          host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            docker load -i ~/myapp.tar
-            docker stop myapp || true
-            docker rm myapp || true
-            docker run -d -p 80:80 --name myapp myapp:latest
+            set -eux
+
+            # --- Ensure Docker (Ubuntu) ---
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
+              sudo systemctl enable --now docker
+              sudo usermod -aG docker ubuntu || true
+            fi
+
+            # --- Prep deploy dir ---
+            sudo mkdir -p /opt/myapp
+            sudo chown -R ubuntu:ubuntu /opt/myapp
+            cd /opt/myapp
+
+            # --- Free port 80 from any old containers ---
+            sudo docker rm -f webserver myapp 2>/dev/null || true
+
+            # --- Build & run fresh container on port 80 ---
+            sudo docker build -t myapp:latest .
+            sudo docker run -d --name myapp -p 80:80 myapp:latest
+
+            # --- Show status & last logs for debugging ---
+            sudo docker ps
+            sudo docker logs myapp --tail=80 || true
+
+            # --- Local health check on the instance ---
+            (curl -sI http://127.0.0.1/ | head -n 20) || true
