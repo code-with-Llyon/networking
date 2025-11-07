@@ -59,8 +59,7 @@ jobs:
 
             # Build & run
             sudo docker build -t myapp:latest .
-            sudo docker run -d --name myapp -p 80:80 myapp:latest
-
+sudo docker run -d --name myapp --restart unless-stopped -p 80:80 myapp:latest
             # Status + last logs + local health check
             sudo docker ps
             sudo docker logs myapp --tail=80 || true
