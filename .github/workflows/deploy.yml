@@ -1,0 +1,44 @@
+name: Deploy Flask App to AWS EC2
+
+on:
+  push:
+    branches:
+      - main  # Run this when you push to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t myapp:latest .
+
+      - name: Save Docker image as tar
+        run: docker save myapp:latest -o myapp.tar
+
+      - name: Copy Docker image to EC2 instance
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "myapp.tar"
+          target: "~/"
+
+      - name: Deploy Docker container on EC2
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.EC2_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker load -i ~/myapp.tar
+            docker stop myapp || true
+            docker rm myapp || true
+            docker run -d -p 80:80 --name myapp myapp:latest
