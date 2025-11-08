@@ -37,7 +37,7 @@ The updated Flask app becomes live on port 80.
 
 Verification
 You can verify deployment by visiting your EC2 public IP in a web browser:
-http://16.16.92.152 
+http://13.48.39.78
 
 You should see the message:
 "Hello everyone — this is my containerized networking app!"
